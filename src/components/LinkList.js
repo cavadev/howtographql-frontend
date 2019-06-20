@@ -5,24 +5,38 @@ import gql from 'graphql-tag'
 import { LINKS_PER_PAGE } from '../constants'
 
 export const FEED_QUERY = gql`
-query ($first: Int, $skip: Int) {
-    links(first: $first, skip: $skip) {
-      id
-      url
-      description
-      created
-      postedBy {
-        id
-        username
-      }
-      votes {
-        id
-        user {
+query ($first: Int, $cursor: String, $orderBy: String) {
+    links(first: $first, after: $cursor, orderBy: $orderBy) {
+      totalCount
+      edges {
+        node {
           id
+          url
+          description
+          created
+          postedBy{
+            id
+            username
+          }
+          votes {	
+            edges{
+              node{
+                id
+                created
+                user {
+                  id
+                  username
+                }
+              }
+            }
+          }
         }
       }
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
     }
-    count
   }
 `
 
@@ -33,79 +47,90 @@ class LinkList extends Component {
       query: FEED_QUERY,
       variables:this._getQueryVariables()
     })
-  
-    const votedLink = data.links.find(link => link.id === linkId)
-    votedLink.votes = createVote.link.votes
-  
-    store.writeQuery({ query: FEED_QUERY, data })
+    const votedLink = data.links.edges.find(link => link.node.id === linkId)
+    votedLink.node.votes = createVote.link.votes
+    store.writeQuery({
+       query: FEED_QUERY, 
+       variables: this._getQueryVariables(),
+       data 
+    })
+    /* 
+    Sometimes no update votes in UI (only with '/top' url). The same problem using withApollo() and 
+    this.props.client.writeQuery({ query: FEED_QUERY, variables: this._getQueryVariables(), data })
+    Ref: https://github.com/apollographql/apollo-client/issues/2415#issuecomment-459732038
+    */
   }
 
   _getQueryVariables = () => {
     const isNewPage = this.props.location.pathname.includes('new')
-    const page = parseInt(this.props.match.params.page, 10)
-  
-    const skip = isNewPage ? (page - 1) * LINKS_PER_PAGE : 0
     const first = isNewPage ? LINKS_PER_PAGE : 100
-    //const orderBy = isNewPage ? 'createdAt_DESC' : null
-    return { first, skip/*, orderBy*/ }
+    const orderBy = isNewPage ? '-created' : null
+    return { first , orderBy }
   }
 
   _getLinksToRender = data => {
     const isNewPage = this.props.location.pathname.includes('new')
     if (isNewPage) {
-      return data.links
+      return data.links.edges
     }
-    const rankedLinks = data.links.slice()
-    rankedLinks.sort((l1, l2) => l2.votes.length - l1.votes.length)
+    const rankedLinks = data.links.edges.slice()
+    rankedLinks.sort((l1, l2) => l2.node.votes.edges.length - l1.node.votes.edges.length)
     return rankedLinks
   }
 
-  _nextPage = data => {
-    const page = parseInt(this.props.match.params.page, 10)
-    if (page <= data.count / LINKS_PER_PAGE) {
-      const nextPage = page + 1
-      this.props.history.push(`/new/${nextPage}`)
-    }
-  }
-  
-  _previousPage = () => {
-    const page = parseInt(this.props.match.params.page, 10)
-    if (page > 1) {
-      const previousPage = page - 1
-      this.props.history.push(`/new/${previousPage}`)
-    }
-  }
+  _updateQuery = (previousResult, { fetchMoreResult }) => {
+    const newEdges = fetchMoreResult.links.edges;
+    const pageInfo = fetchMoreResult.links.pageInfo;
+    const totalCount = fetchMoreResult.links.totalCount;
+
+    return newEdges.length
+      ? {
+          // Put the new links at the end of the list and update `pageInfo`
+          // so we have the new `endCursor` and `hasNextPage` values
+          links: {
+            __typename: previousResult.links.__typename,
+            edges: [...previousResult.links.edges, ...newEdges],
+            pageInfo,
+            totalCount
+          }
+        }
+      : previousResult;
+  };
 
   render() {
     return (
       <Query query={FEED_QUERY} variables={this._getQueryVariables()}>
-        {({ loading, error, data }) => {
+        {({ loading, error, data, fetchMore }) => {
         if (loading) return <div>Fetching</div>
         if (error) return (<div>Error: {error.toString()}</div>)
     
-        const linksToRender = this._getLinksToRender(data)
+        let linksToRender = this._getLinksToRender(data)
         const isNewPage = this.props.location.pathname.includes('new')
-        const pageIndex = this.props.match.params.page
-          ? (this.props.match.params.page - 1) * LINKS_PER_PAGE
-          : 0
     
         return (
           <Fragment>
             {linksToRender.map((link, index) => (
               <Link 
-                key={link.id} 
+                key={link.node.id} 
                 link={link} 
-                index={index + pageIndex}
+                index={index}
                 updateStoreAfterVote={this._updateCacheAfterVote}
               />
             ))}
-            {isNewPage && (
+            {isNewPage && data.links.pageInfo.hasNextPage && (
               <div className="flex ml4 mv3 gray">
-                <div className="pointer mr2" onClick={this._previousPage}>
-                  Previous
-                </div>
-                <div className="pointer" onClick={() => this._nextPage(data)}>
-                  Next
+                <div 
+                  className="pointer" 
+                  onClick={() => 
+                    fetchMore({
+                      variables: {
+                        cursor: data.links.pageInfo.endCursor,
+                      },
+                      updateQuery: this._updateQuery
+                    }
+                  )}
+                >
+                  More
                 </div>
               </div>
             )}

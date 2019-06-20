@@ -6,19 +6,34 @@ import Link from './Link'
 const FEED_SEARCH_QUERY = gql`
   query FeedSearchQuery($search: String!) {
     links(search: $search) {
-      id
-      url
-      description
-      created
-      postedBy {
-        id
-        username
-      }
-      votes {
-        id
-        user {
+      totalCount
+      edges {
+        node {
           id
+          url
+          description
+          created
+          postedBy{
+            id
+            username
+          }
+          votes {	
+            edges{
+              node{
+                id
+                created
+                user {
+                  id
+                  username
+                }
+              }
+            }
+          }
         }
+      }
+      pageInfo {
+        endCursor
+        hasNextPage
       }
     }
   }
@@ -43,7 +58,7 @@ class Search extends Component {
           <button onClick={() => this._executeSearch()}>OK</button>
         </div>
         {this.state.links.map((link, index) => (
-          <Link key={link.id} link={link} index={index} />
+          <Link key={link.node.id} link={link} index={index} />
         ))}
       </div>
     )
@@ -55,7 +70,7 @@ class Search extends Component {
       query: FEED_SEARCH_QUERY,
       variables: { search },
     })
-    const links = result.data.links
+    const links = result.data.links.edges
     this.setState({ links })
   }
 }

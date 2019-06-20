@@ -5,18 +5,25 @@ import { Mutation } from 'react-apollo'
 import gql from 'graphql-tag'
 
 const VOTE_MUTATION = gql`
-  mutation VoteMutation($linkId: Int) {
-    createVote(linkId: $linkId) {
+  mutation VoteMutation($linkId: String) {
+    createVote(input: { linkId: $linkId }) {
       link {
-        votes {
-          id
-          user {
-            id
+        votes {	
+          edges{
+            node{
+              id
+              created
+              user {
+                id
+                username
+              }
+            }
           }
         }
       }
       user {
         id
+        username
       }
     }
   }
@@ -32,9 +39,9 @@ class Link extends Component {
           {authToken && (
             <Mutation 
               mutation={VOTE_MUTATION} 
-              variables={{ linkId: this.props.link.id }}
-              update={(store, { data: { createVote } }) =>
-                this.props.updateStoreAfterVote(store, createVote, this.props.link.id)
+              variables={{ linkId: this.props.link.node.id }}
+              update={(store, { data: { createVote } }) => 
+                this.props.updateStoreAfterVote(store, createVote, this.props.link.node.id)
               }  
             >
               {voteMutation => (
@@ -47,14 +54,14 @@ class Link extends Component {
         </div>
         <div className="ml1">
           <div>
-            {this.props.link.description} ({this.props.link.url})
+            {this.props.link.node.description} ({this.props.link.node.url})
           </div>
           <div className="f6 lh-copy gray">
-            {this.props.link.votes.length} votes | by{' '}
-            {this.props.link.postedBy
-              ? this.props.link.postedBy.username
+            {this.props.link.node.votes.edges.length} votes | by{' '}
+            {this.props.link.node.postedBy
+              ? this.props.link.node.postedBy.username
               : 'Unknown'}{' '}
-            {timeDifferenceForDate(this.props.link.created)}
+            {timeDifferenceForDate(this.props.link.node.created)}
           </div>
         </div>
       </div>

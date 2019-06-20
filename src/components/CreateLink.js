@@ -6,20 +6,28 @@ import { LINKS_PER_PAGE } from '../constants'
 
 const POST_MUTATION = gql`
   mutation PostMutation($description: String!, $url: String!) {
-    createLink(description: $description, url: $url) {
-      id
-      url
-      description
-      created
-      postedBy {
+    createLink(input: { description: $description, url: $url }) {
+      link {
+        __typename
         id
-        username
-        email
-      }
-      votes {
-        id
-        user {
+        url
+        description
+        created
+        postedBy{
           id
+          username
+        }
+        votes {	
+          edges{
+            node{
+              id
+              created
+              user {
+                id
+                username
+              }
+            }
+          }
         }
       }
     }
@@ -55,20 +63,22 @@ class CreateLink extends Component {
         <Mutation
           mutation={POST_MUTATION}
           variables={{ description, url }}
-          onCompleted={() => this.props.history.push('/new/1')}
+          onCompleted={() => this.props.history.push('/new')}
           update={(store, { data: { createLink } }) => {
             const first = LINKS_PER_PAGE
-            const skip = 0
-            //const orderBy = 'createdAt_DESC'
+            const orderBy = '-created'
             const data = store.readQuery({
               query: FEED_QUERY,
-              variables: { first, skip/*, orderBy */}
+              variables: { first, orderBy }
             })
-            data.links.unshift(createLink)
+            //I add __typename field to avoid warning 'missing field'
+            let newNode = {node: createLink.link, "__typename": "LinkNodeEdge"}
+            newNode.node['__typename'] = "LinkNode";
+            data.links.edges.unshift(newNode)
             store.writeQuery({
               query: FEED_QUERY,
               data,
-              variables: { first, skip/*, orderBy */}
+              variables: { first, orderBy }
             })
           }}
         >
